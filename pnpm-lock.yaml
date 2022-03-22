@@ -830,7 +830,7 @@ importers:
       cors: ^2.8.5
       cross-spawn: ^7.0.3
       debug: ^4.3.4
-      dotenv: ^14.3.2
+      dotenv: ^16.0.0
       dotenv-expand: ^5.1.0
       es-module-lexer: ^0.10.4
       esbuild: ^0.14.27
@@ -908,7 +908,7 @@ importers:
       cors: 2.8.5
       cross-spawn: 7.0.3
       debug: 4.3.4
-      dotenv: 14.3.2
+      dotenv: 16.0.0
       dotenv-expand: 5.1.0
       es-module-lexer: 0.10.4
       estree-walker: 2.0.2
@@ -4340,8 +4340,8 @@ packages:
     resolution: {integrity: sha512-YXQl1DSa4/PQyRfgrv6aoNjhasp/p4qs9FjJ4q4cQk+8m4r6k4ZSiEyytKG8f8W9gi8WsQtIObNmKd+tMzNTmA==}
     dev: true
 
-  /dotenv/14.3.2:
-    resolution: {integrity: sha512-vwEppIphpFdvaMCaHfCEv9IgwcxMljMw2TnAQBB4VWPvzXQLTb82jwmdOKzlEVUL3gNFT4l4TPKO+Bn+sqcrVQ==}
+  /dotenv/16.0.0:
+    resolution: {integrity: sha512-qD9WU0MPM4SWLPJy/r2Be+2WgQj8plChsyrCNQzW/0WjvcJQiKQJ9mH3ZgB3fxbUUxgc/11ZJ0Fi5KiimWGz2Q==}
     engines: {node: '>=12'}
     dev: true
 
