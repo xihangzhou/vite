@@ -9,11 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@rollup/pluginutils": "^4.2.0",
+    "postcss": "^8.4.12",
+    "postcss-less": "^6.0.0",
+    "postcss-modules": "^4.3.1",
     "react": "^17.0.2",
     "react-dom": "^17.0.2"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "workspace:*"
+    "@vitejs/plugin-react": "workspace:*",
+    "less": "^4.1.3"
   },
   "babel": {
     "presets": [
