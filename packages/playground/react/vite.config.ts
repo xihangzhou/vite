@@ -6,6 +6,9 @@ const config: UserConfig = {
   build: {
     // to make tests faster
     minify: false
+  },
+  server: {
+    force: true
   }
 }
 

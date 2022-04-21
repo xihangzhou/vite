@@ -49,6 +49,7 @@ function cleanOptions<Options extends GlobalCLIOptions>(
   return ret
 }
 
+// 使用cac定义了各种命令行的交互参数
 cli
   .option('-c, --config <file>', `[string] use specified config file`)
   .option('--base <path>', `[string] public base path (default: /)`)
@@ -58,6 +59,7 @@ cli
   .option('-f, --filter <filter>', `[string] filter debug logs`)
   .option('-m, --mode <mode>', `[string] set env mode`)
 
+// dev命令相关的参数
 // dev
 cli
   .command('[root]', 'start dev server') // default command
@@ -76,8 +78,11 @@ cli
   .action(async (root: string, options: ServerOptions & GlobalCLIOptions) => {
     // output structure is preserved even after bundling so require()
     // is ok here
+    // 获取createServer方法，注意这里采用了es2020 import的动态加载提案，返回一个promise实例，可以使用await关键字达到同步加载的效果
+    // 这里返回的createServer是一个创建服务的方法
     const { createServer } = await import('./server')
     try {
+      // 传入命令行参数，返回一个server实例
       const server = await createServer({
         root,
         base: options.base,
@@ -88,10 +93,13 @@ cli
         server: cleanOptions(options)
       })
 
+      // 如果没有生成这个httpServer实例就直接报错
       if (!server.httpServer) {
         throw new Error('HTTP server not available')
       }
 
+      // 监听端口
+      // 注意这个listen函数是被重新定义过的
       await server.listen()
 
       const info = server.config.logger.info

@@ -684,6 +684,8 @@ export type IndexHtmlTransform =
       transform: IndexHtmlTransformHook
     }
 
+// 解析插件的transformIndexHtml周期对应的hooks
+// https://vitejs.dev/guide/api-plugin.html#transformindexhtml
 export function resolveHtmlTransforms(
   plugins: readonly Plugin[]
 ): [IndexHtmlTransformHook[], IndexHtmlTransformHook[]] {
@@ -691,13 +693,16 @@ export function resolveHtmlTransforms(
   const postHooks: IndexHtmlTransformHook[] = []
 
   for (const plugin of plugins) {
-    const hook = plugin.transformIndexHtml
+    const hook = plugin.transformIndexHtml // transformIndexHtml是vite独有的一个生命周期，这一步获取plugin在这个周期上的回调
     if (hook) {
       if (typeof hook === 'function') {
+        // 如果是函数
         postHooks.push(hook)
       } else if (hook.enforce === 'pre') {
+        // 如果是pre执行
         preHooks.push(hook.transform)
       } else {
+        //如果是之后执行
         postHooks.push(hook.transform)
       }
     }
@@ -708,6 +713,7 @@ export function resolveHtmlTransforms(
 
 export const maybeVirtualHtmlSet = new Set<string>()
 
+// 传入原来的html字符串和所有的hooks以及hooks执行的时候上下文，返回最终经过插件修饰过的html
 export async function applyHtmlTransforms(
   html: string,
   hooks: IndexHtmlTransformHook[],

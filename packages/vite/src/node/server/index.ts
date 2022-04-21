@@ -299,25 +299,32 @@ export interface ViteDevServer {
 export async function createServer(
   inlineConfig: InlineConfig = {}
 ): Promise<ViteDevServer> {
+  // 解析服务的配置返回为配置实例
   const config = await resolveConfig(inlineConfig, 'serve', 'development')
-  const root = config.root
-  const serverConfig = config.server
+  const root = config.root // 项目运行的根目录
+  const serverConfig = config.server // 服务配置
   const httpsOptions = await resolveHttpsConfig(
+    // 再解析https的配置
     config.server.https,
     config.cacheDir
   )
+  // https://vitejs.dev/config/#server-middlewaremode
   let { middlewareMode } = serverConfig
   if (middlewareMode === true) {
     middlewareMode = 'ssr'
   }
 
+  // 一个服务实例
   const middlewares = connect() as Connect.Server
+  // 如果不是ssr模式的话就传入服务配置返回一个httpServer实例
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
+  // 生成监听这个httpServer的webSocketServer
   const ws = createWebSocketServer(httpServer, config, httpsOptions)
 
   const { ignored = [], ...watchOptions } = serverConfig.watch || {}
+  // 监听文件的变动
   const watcher = chokidar.watch(path.resolve(root), {
     ignored: [
       '**/node_modules/**',
@@ -330,16 +337,20 @@ export async function createServer(
     ...watchOptions
   }) as FSWatcher
 
+  // 存储任何一个文件和模块的映射关系，传入的参数是oluginContainer的resolveId方法的封装
   const moduleGraph: ModuleGraph = new ModuleGraph((url, ssr) =>
     container.resolveId(url, undefined, { ssr })
   )
 
+  // 插件container,可以去执行对应的rollup plugin的hooks
+  // 这里就是返回了一个实例，具体的方法执行在后面
   const container = await createPluginContainer(config, moduleGraph, watcher)
-  const closeHttpServer = createServerCloseFn(httpServer)
+  const closeHttpServer = createServerCloseFn(httpServer) // 返回一个关闭服务的函数，关闭服务的同时手动关闭所有连接
 
   // eslint-disable-next-line prefer-const
   let exitProcess: () => void
 
+  // 这个就是最后需要返回的server实例，具体定义在实例上的方法被调用的时候再回头看看
   const server: ViteDevServer = {
     config,
     middlewares,
@@ -433,6 +444,8 @@ export async function createServer(
     _pendingRequests: new Map()
   }
 
+  // 转换index.html文件为真正返回的index.html的函数
+  // 注意transformIndexHtml是一个函数
   server.transformIndexHtml = createDevHtmlTransformFn(server)
 
   exitProcess = async () => {
@@ -449,19 +462,23 @@ export async function createServer(
     process.stdin.on('end', exitProcess)
   }
 
-  const { packageCache } = config
+  const { packageCache } = config // packageCache是一个Map对象实例，是一个key到packageCaacheData的映射
+  // 重写set方法
   const setPackageData = packageCache.set.bind(packageCache)
   packageCache.set = (id, pkg) => {
+    // 如果id是json文件监听器就加入对这个文件的监听
     if (id.endsWith('.json')) {
       watcher.add(id)
     }
     return setPackageData(id, pkg)
   }
 
+  // 监听到文件变化过后的回调
   watcher.on('change', async (file) => {
-    file = normalizePath(file)
+    file = normalizePath(file) // 把一个路径转换为一个绝对路径
+    // 如果是一个package.json文件
     if (file.endsWith('/package.json')) {
-      return invalidatePackageData(packageCache, file)
+      return invalidatePackageData(packageCache, file) // 从packageCache缓存中删除这个packge.json文件的配置
     }
     // invalidate module graph cache on file change
     moduleGraph.onFileChange(file)
@@ -477,10 +494,12 @@ export async function createServer(
     }
   })
 
+  // 加入文件过后的回调
   watcher.on('add', (file) => {
     handleFileAddUnlink(normalizePath(file), server)
   })
 
+  // unlink后的回调
   watcher.on('unlink', (file) => {
     handleFileAddUnlink(normalizePath(file), server, true)
   })
@@ -495,36 +514,44 @@ export async function createServer(
   // apply server configuration hooks from plugins
   const postHooks: ((() => void) | void)[] = []
   for (const plugin of config.plugins) {
+    // configureServer是用于配置开发服务器的钩子。最常见的用例是在内部 connect 应用程序中添加自定义中间件:
     if (plugin.configureServer) {
       postHooks.push(await plugin.configureServer(server))
     }
   }
 
   // Internal middlewares ------------------------------------------------------
+  // 定义各种中间件
 
   // request timer
+  // 请求时间监控
   if (process.env.DEBUG) {
     middlewares.use(timeMiddleware(root))
   }
 
   // cors (enabled by default)
+  // 跨域cors是否开启
   const { cors } = serverConfig
   if (cors !== false) {
     middlewares.use(corsMiddleware(typeof cors === 'boolean' ? {} : cors))
   }
 
   // proxy
+  // 代理设置
   const { proxy } = serverConfig
   if (proxy) {
+    // 使用http-proxy这个库完成代理的实现
     middlewares.use(proxyMiddleware(httpServer, config))
   }
 
   // base
+  // 修改请求路径的base
   if (config.base !== '/') {
     middlewares.use(baseMiddleware(server))
   }
 
   // open in editor support
+  // use方法第一个参数可以为字符串，标记为请求路径，即只有这个路径才走这个中间件
   middlewares.use('/__open-in-editor', launchEditorMiddleware())
 
   // hmr reconnect ping
@@ -536,11 +563,14 @@ export async function createServer(
   // serve static files under /public
   // this applies before the transform middleware so that these files are served
   // as-is without transforms.
+  // https://cn.vitejs.dev/guide/assets.html#the-public-directory
+  // 所有静态资源应该存放的文件夹
   if (config.publicDir) {
     middlewares.use(servePublicMiddleware(config.publicDir))
   }
 
   // main transform middleware
+  // 转换路径的中间件
   middlewares.use(transformMiddleware(server))
 
   // serve static files
@@ -555,8 +585,14 @@ export async function createServer(
   // run post config hooks
   // This is applied before the html middleware so that user middleware can
   // serve custom content instead of index.html.
+  // configureServer周期的postHooks的执行
   postHooks.forEach((fn) => fn && fn())
 
+  //https://cn.vitejs.dev/config/#server-middlewaremode
+  // 以中间件模式创建 Vite 服务器。（不含 HTTP 服务器）
+
+  // 'ssr' 将禁用 Vite 自身的 HTML 服务逻辑，因此你应该手动为 index.html 提供服务。
+  // 'html' 将启用 Vite 自身的 HTML 服务逻辑。
   if (!middlewareMode || middlewareMode === 'html') {
     // transform index.html
     middlewares.use(indexHtmlMiddleware(server))
@@ -571,14 +607,17 @@ export async function createServer(
   // error handler
   middlewares.use(errorMiddleware(server, !!middlewareMode))
 
+  // 如果没有定义middewareMode并且有httpServer,即启用vite自身的html服务并且之前也确实定义成功了
   if (!middlewareMode && httpServer) {
     let isOptimized = false
     // overwrite listen to init optimizer before server start
+    // 重写listen函数，在真正listen之前先去init optimizer初始化预构建
     const listen = httpServer.listen.bind(httpServer)
     httpServer.listen = (async (port: number, ...args: any[]) => {
       if (!isOptimized) {
         try {
-          await container.buildStart({})
+          await container.buildStart({}) // 执行所有的plugin的buildStart周期
+          // 依赖预构建
           server._optimizedDeps = createOptimizedDeps(server)
           isOptimized = true
         } catch (e) {
@@ -589,6 +628,7 @@ export async function createServer(
       return listen(port, ...args)
     }) as any
   } else {
+    // 如果没有httpServer
     await container.buildStart({})
     server._optimizedDeps = createOptimizedDeps(server)
   }

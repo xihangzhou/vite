@@ -22,7 +22,7 @@ import type { ModuleGraph } from '../moduleGraph'
 export function createDevHtmlTransformFn(
   server: ViteDevServer
 ): (url: string, html: string, originalUrl: string) => Promise<string> {
-  const [preHooks, postHooks] = resolveHtmlTransforms(server.config.plugins)
+  const [preHooks, postHooks] = resolveHtmlTransforms(server.config.plugins) // 返回每一个插件在transformIndexHtml周期的回调
 
   return (url: string, html: string, originalUrl: string): Promise<string> => {
     return applyHtmlTransforms(html, [...preHooks, devHtmlHook, ...postHooks], {
@@ -201,11 +201,15 @@ export function indexHtmlMiddleware(
     const url = req.url && cleanUrl(req.url)
     // spa-fallback always redirects to /index.html
     if (url?.endsWith('.html') && req.headers['sec-fetch-dest'] !== 'script') {
+      // 获取html文件的名称
       const filename = getHtmlFilename(url, server)
+      // 如果存在这个文件的话
       if (fs.existsSync(filename)) {
         try {
           let html = fs.readFileSync(filename, 'utf-8')
+          // 执行转换html的函数得到最新的html文件
           html = await server.transformIndexHtml(url, html, req.originalUrl)
+          // 返回这个html文件
           return send(req, res, html, 'html', {
             headers: server.config.server.headers
           })

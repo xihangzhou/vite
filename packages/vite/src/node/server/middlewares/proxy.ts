@@ -35,6 +35,7 @@ export function proxyMiddleware(
   const options = config.server.proxy!
 
   // lazy require only when proxy is used
+  // 首先处理代理的配置，存储到proxies中
   const proxies: Record<string, [HttpProxy.Server, ProxyOptions]> = {}
 
   Object.keys(options).forEach((context) => {
@@ -58,10 +59,12 @@ export function proxyMiddleware(
     proxies[context] = [proxy, { ...opts }]
   })
 
+  // 如果有传入一个httpServer，就监听upgrade事件来进行转发
   if (httpServer) {
     httpServer.on('upgrade', (req, socket, head) => {
       const url = req.url!
       for (const context in proxies) {
+        // 如果能匹配上代理的路径
         if (doesProxyContextMatchUrl(context, url)) {
           const [proxy, opts] = proxies[context]
           if (
@@ -88,6 +91,7 @@ export function proxyMiddleware(
         const [proxy, opts] = proxies[context]
         const options: HttpProxy.ServerOptions = {}
 
+        // 如果设置了bypass就直接使用bypass的运行结果作为options
         if (opts.bypass) {
           const bypassResult = opts.bypass(req, res, opts)
           if (typeof bypassResult === 'string') {

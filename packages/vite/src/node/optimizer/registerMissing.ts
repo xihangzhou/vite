@@ -28,6 +28,7 @@ const isDebugEnabled = _debug('vite:deps').enabled
  */
 const debounceMs = 100
 
+// 创建预构建的依赖
 export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
   const { config } = server
   const { logger } = config
@@ -38,16 +39,17 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
 
   const optimizedDeps: OptimizedDeps = {
     metadata:
-      cachedMetadata || createOptimizedDepsMetadata(config, sessionTimestamp),
+      cachedMetadata || createOptimizedDepsMetadata(config, sessionTimestamp), // 如果没有缓存的matadata就创建新的metaData
     registerMissingImport
   }
 
   let handle: NodeJS.Timeout | undefined
-  let newDepsDiscovered = false
+  let newDepsDiscovered = false // 是否发现新的依赖
 
-  let newDepsToLog: string[] = []
+  let newDepsToLog: string[] = [] // 新的要log的依赖
   let newDepsToLogHandle: NodeJS.Timeout | undefined
   const logNewlyDiscoveredDeps = () => {
+    // log新的依赖
     if (newDepsToLog.length) {
       config.logger.info(
         colors.green(
@@ -61,8 +63,12 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
     }
   }
 
+  // 每一个DepOptimizationProcessing就是一个promise实例，把这个promise实例的resolve方法外置
+  // 对应了依赖优化进程
   let depOptimizationProcessing = newDepOptimizationProcessing()
+  // 依赖优化进程队列
   let depOptimizationProcessingQueue: DepOptimizationProcessing[] = []
+  // resolve依赖优化进程
   const resolveEnqueuedProcessingPromises = () => {
     // Resolve all the processings (including the ones which were delayed)
     for (const processing of depOptimizationProcessingQueue) {
@@ -71,7 +77,9 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
     depOptimizationProcessingQueue = []
   }
 
+  // 重新进队
   let enqueuedRerun: (() => void) | undefined
+  // 现在是否在处理
   let currentlyProcessing = false
 
   // If there wasn't a cache or it is outdated, perform a fast scan with esbuild
@@ -80,6 +88,7 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
     currentlyProcessing = true
 
     const scanPhaseProcessing = newDepOptimizationProcessing()
+    // scanProcessing意味着扫描进程
     optimizedDeps.scanProcessing = scanPhaseProcessing.promise
 
     const warmUp = async () => {
@@ -90,12 +99,14 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
 
         const { metadata } = optimizedDeps
 
+        // 快速使用esbuild扫描项目依赖
         const discovered = await discoverProjectDependencies(
           config,
           sessionTimestamp
         )
 
         // Respect the scan phase discover order to improve reproducibility
+        // 向metadata中添加discovered添加depInfo
         for (const depInfo of Object.values(discovered)) {
           addOptimizedDepInfo(metadata, 'discovered', {
             ...depInfo,
@@ -112,9 +123,11 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
           }
         )
 
+        // 结束scanPhaseProcessing，扭转这个promise状态
         scanPhaseProcessing.resolve()
         optimizedDeps.scanProcessing = undefined
 
+        // 运行预构建
         runOptimizer()
       } catch (e) {
         logger.error(e.message)
@@ -125,6 +138,7 @@ export function createOptimizedDeps(server: ViteDevServer): OptimizedDeps {
       }
     }
 
+    // 使用宏任务把warmup延后启动
     setTimeout(warmUp, 0)
   }
 

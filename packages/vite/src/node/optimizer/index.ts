@@ -120,16 +120,17 @@ export interface DepOptimizationProcessing {
 }
 
 export interface OptimizedDepInfo {
-  id: string
-  file: string
-  src?: string
-  needsInterop?: boolean
-  browserHash?: string
-  fileHash?: string
+  id: string // 依赖的唯一标志，如果是npm包的话就是包名称，如果是chunks就是chunk不带后缀的文件名
+  file: string // 如果是包就是包被于预构建过后在deps文件夹下的文件名，如果是chunks就是文件名
+  src?: string // 只有npm包会有，指的是对应的node_modules下的包地址
+  needsInterop?: boolean // 是否需要编译 ❓
+  browserHash?: string // 同上 ❓
+  fileHash?: string // 对这个文件的hash映射
   /**
    * During optimization, ids can still be resolved to their final location
    * but the bundles may not yet be saved to disk
    */
+  // 在预构建的过程中，有可能路径已经被解析了，但是还没有打包完成，这个时候就要用一个属性来标记一下
   processing?: Promise<void>
 }
 
@@ -138,12 +139,14 @@ export interface DepOptimizationMetadata {
    * The main hash is determined by user config and dependency lockfiles.
    * This is checked on server startup to avoid unnecessary re-bundles.
    */
+  // 被用户配置和依赖lockfiles决定的hash值,也叫做main hash
   hash: string
   /**
    * The browser hash is determined by the main hash plus additional dependencies
    * discovered at runtime. This is used to invalidate browser requests to
    * optimized deps.
    */
+  // 上面这个hash加上runtime-dependecy
   browserHash: string
   /**
    * Metadata for each already optimized dependency
@@ -200,7 +203,7 @@ export function createOptimizedDepsMetadata(
   const hash = getDepHash(config)
   return {
     hash,
-    browserHash: getOptimizedBrowserHash(hash, {}, timestamp),
+    browserHash: getOptimizedBrowserHash(hash, {}, timestamp), // browerHash就是hash + deps + timestamp
     optimized: {},
     chunks: {},
     discovered: {},
@@ -231,12 +234,18 @@ export function loadCachedDepOptimizationMetadata(
 
   // Before Vite 2.9, dependencies were cached in the root of the cacheDir
   // For compat, we remove the cache if we find the old structure
+  // 在 Vite 2.9之前_metadata.json是放在config.cacheDir目录下的，但是之后改为config.cacheDir目录下的deps文件夹
+  // 所以如果是旧版本的文件结构的话就清空了重来
   if (fs.existsSync(path.join(config.cacheDir, '_metadata.json'))) {
     emptyDir(config.cacheDir)
   }
 
+  // 获取缓存依赖路径，这个路径对应配置文件中的cacheDir
+  // depsCacheDir为config.cacheDir目录下的deps文件夹
   const depsCacheDir = getDepsCacheDir(config)
 
+  // https://vitejs.dev/config/#server-force
+  // 如果不是强制预构建就可以读取之前的缓存文件
   if (!force) {
     let cachedMetadata: DepOptimizationMetadata | undefined
     try {
@@ -247,6 +256,7 @@ export function loadCachedDepOptimizationMetadata(
       )
     } catch (e) {}
     // hash is consistent, no need to re-bundle
+    // hash值是根据config所生成的一个对应config的唯一的hash值，如果这个值没有变化就代表cachedMetaData不需要再重新生成
     if (cachedMetadata && cachedMetadata.hash === getDepHash(config)) {
       log('Hash is consistent. Skipping. Use --force to override.')
       // Nothing to commit or cancel as we are using the cache, we only
@@ -257,6 +267,7 @@ export function loadCachedDepOptimizationMetadata(
     config.logger.info('Forced re-optimization of dependencies')
   }
 
+  // 如果要再次构建的话就清空缓存
   // Start with a fresh cache
   removeDirSync(depsCacheDir)
 }
@@ -579,6 +590,7 @@ async function addManuallyIncludedOptimizeDeps(
   }
 }
 
+// 生成一个promise实例并且把这个实例的resolve方法和这个实例一起放在一个对象中
 export function newDepOptimizationProcessing(): DepOptimizationProcessing {
   let resolve: () => void
   const promise = new Promise((_resolve) => {

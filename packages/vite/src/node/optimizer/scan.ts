@@ -54,12 +54,18 @@ export async function scanImports(config: ResolvedConfig): Promise<{
 
   let entries: string[] = []
 
+  // https://vitejs.dev/config/#optimizedeps-entries
   const explicitEntryPatterns = config.optimizeDeps.entries
+  // https://vitejs.dev/config/#build-rollupoptions
+  // 构建的时候的入口
+  // 构建vite是用的rollup所有这里是rollupOptions
   const buildInput = config.build.rollupOptions?.input
 
   if (explicitEntryPatterns) {
+    // globEntries从文件系统中找到符合explicitEntryPatterns格式的文件的绝对路径
     entries = await globEntries(explicitEntryPatterns, config)
   } else if (buildInput) {
+    // 如果定义了buildInput入口，就把这个作为entry
     const resolvePath = (p: string) => path.resolve(config.root, p)
     if (typeof buildInput === 'string') {
       entries = [resolvePath(buildInput)]
@@ -71,17 +77,19 @@ export async function scanImports(config: ResolvedConfig): Promise<{
       throw new Error('invalid rollupOptions.input value.')
     }
   } else {
-    entries = await globEntries('**/*.html', config)
+    entries = await globEntries('**/*.html', config) // 否则以html文件为entry
   }
 
   // Non-supported entry file types and virtual files should not be scanned for
   // dependencies.
+  // 入口只能是js/ts或者是html文件
   entries = entries.filter(
     (entry) =>
       (JS_TYPES_RE.test(entry) || htmlTypesRE.test(entry)) &&
       fs.existsSync(entry)
   )
 
+  // 如果没有entries就报错
   if (!entries.length) {
     if (!explicitEntryPatterns && !config.optimizeDeps.include) {
       config.logger.warn(
@@ -102,6 +110,8 @@ export async function scanImports(config: ResolvedConfig): Promise<{
   const container = await createPluginContainer(config)
   const plugin = esbuildScanPlugin(config, container, deps, missing, entries)
 
+  // esbuildOptions are Options to pass to esbuild during the dep scanning and optimization.
+  // https://vitejs.dev/config/#optimizedeps-esbuildoptions
   const { plugins = [], ...esbuildOptions } =
     config.optimizeDeps?.esbuildOptions ?? {}
 
@@ -136,10 +146,13 @@ function orderedDependencies(deps: Record<string, string>) {
   return Object.fromEntries(depsList)
 }
 
+// 传入一个pattern和config，返回符合要求的文件名
 function globEntries(pattern: string | string[], config: ResolvedConfig) {
+  // glob函数的第二个参数代表glob匹配的选项
   return glob(pattern, {
-    cwd: config.root,
+    cwd: config.root, // The current working directory in which to search.
     ignore: [
+      // An array of glob patterns to exclude matches. This is an alternative way to use negative patterns.
       '**/node_modules/**',
       `**/${config.build.outDir}/**`,
       // if there aren't explicit entries, also ignore other common folders
@@ -147,7 +160,7 @@ function globEntries(pattern: string | string[], config: ResolvedConfig) {
         ? []
         : [`**/__tests__/**`, `**/coverage/**`])
     ],
-    absolute: true
+    absolute: true // Return the absolute path for entries.
   })
 }
 
@@ -160,6 +173,7 @@ const typeRE = /\btype\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/im
 const langRE = /\blang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/im
 const contextRE = /\bcontext\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/im
 
+// 获取项目入口文件当中的引入的依赖
 function esbuildScanPlugin(
   config: ResolvedConfig,
   container: PluginContainer,
@@ -167,8 +181,11 @@ function esbuildScanPlugin(
   missing: Record<string, string>,
   entries: string[]
 ): Plugin {
+  // 生成一个map,存储path+importer路径名称 => 经过了resolveId生命周期处理过的最终的模块的id
   const seen = new Map<string, string | undefined>()
 
+  // 调用插件的resolvedId周期获得最终的被解析过后的路径
+  // vite-resolve这个默认添加的插件是最后执行的有内容返回的兜底的解析路径的插件
   const resolve = async (id: string, importer?: string) => {
     const key = id + (importer && path.dirname(importer))
     if (seen.has(key)) {
@@ -186,40 +203,53 @@ function esbuildScanPlugin(
     return res
   }
 
-  const include = config.optimizeDeps?.include
+  // https://vitejs.dev/config/#optimizedeps-include
+  // 强制指令要include的包名
+  const include = config.optimizeDeps?.include // By default, linked packages not inside node_modules are not pre-bundled. Use this option to force a linked package to be pre-bundled.
   const exclude = [
     ...(config.optimizeDeps?.exclude || []),
     '@vite/client',
     '@vite/env'
-  ]
+  ] // 排除一定不要的包名
 
+  // 是否是被指定了可以被optimize的后缀
   const isOptimizable = (id: string) =>
     OPTIMIZABLE_ENTRY_RE.test(id) ||
-    !!config.optimizeDeps.extensions?.some((ext) => id.endsWith(ext))
+    !!config.optimizeDeps.extensions?.some((ext) => id.endsWith(ext)) // https://vitejs.dev/config/#resolve-extensions
 
+  // 只要不属于entries的文件就设置为externals，不去解析external的路径
   const externalUnlessEntry = ({ path }: { path: string }) => ({
     path,
     external: !entries.includes(path)
   })
 
+  // 最后返回一个esbuild插件
+  // 注意onResolve和onLoad回调的执行是所有的插件的onResolve和onLoad都会依次执行，但是只要有其中的一个有返回的结果就停止
   return {
     name: 'vite:dep-scan',
     setup(build) {
       const scripts: Record<string, OnLoadResult> = {}
 
       // external urls
+      // https://esbuild.github.io/api/#external
+      // 把这个标记为external从而不打包url的引入
+      // https的引入标记为external
       build.onResolve({ filter: externalRE }, ({ path }) => ({
-        path,
+        path, // 这个path是我们想要真正被解析的path
         external: true
       }))
 
       // data urls
+      // dataurl的也标记为external
       build.onResolve({ filter: dataUrlRE }, ({ path }) => ({
+        // https://esbuild.github.io/plugins/#on-resolve-results
         path,
         external: true
       }))
 
       // local scripts (`<script>` in Svelte and `<script setup>` in Vue)
+      // virtual modules解析的路径取消前缀然后加入script namespace
+      // html中的scirpt就会被当成一个virtual module包被解析
       build.onResolve({ filter: virtualModuleRE }, ({ path }) => {
         return {
           // strip prefix to get valid filesystem path so esbuild can resolve imports in the file
@@ -228,18 +258,27 @@ function esbuildScanPlugin(
         }
       })
 
+      // A callback added using onLoad will be run for each unique path/namespace pair that has not been marked as external
+      // onLoad回调再每次path 和 namespace配对成功的时候出发
+      // 加载script namespace中的内容的时候直接返回存储的scripts对象中的内容
       build.onLoad({ filter: /.*/, namespace: 'script' }, ({ path }) => {
+        // 返回一个OnLoadResult对象，用于定义导入的内容
         return scripts[path]
       })
 
       // html types: extract script contents -----------------------------------
+      // 定义解析html文件的引入
       build.onResolve({ filter: htmlTypesRE }, async ({ path, importer }) => {
+        // importer:This is the path of the module containing this import to be resolved.
+        // 运行resolveId周期
         const resolved = await resolve(path, importer)
         if (!resolved) return
         // It is possible for the scanner to scan html types in node_modules.
         // If we can optimize this html type, skip it so it's handled by the
         // bare import resolve, and recorded as optimization dep.
+        // 如果html解析过后的路径包含node_modules或者是可以优化的话就不加入html namespace，并且路径也不修改,直接去onLoad
         if (resolved.includes('node_modules') && isOptimizable(resolved)) return
+        // 否则加入html namespace
         return {
           path: resolved,
           namespace: 'html'
@@ -247,6 +286,8 @@ function esbuildScanPlugin(
       })
 
       // extract scripts inside HTML-like files and treat it as a js module
+      // 提取出html文件中的sctipts并且把提取出来的scripts加入到scripts中
+      // 最后实际上引入的也是js文件不是html文件
       build.onLoad(
         { filter: htmlTypesRE, namespace: 'html' },
         async ({ path }) => {
@@ -357,20 +398,25 @@ function esbuildScanPlugin(
       )
 
       // bare imports: record and externalize ----------------------------------
+      // import {} from 'path' 这种没有npm包的路径的解析
       build.onResolve(
         {
           // avoid matching windows volume
           filter: /^[\w@][^:]/
         },
         async ({ path: id, importer }) => {
+          // 如果排除在外的包含就直接放在exclude中
           if (moduleListContains(exclude, id)) {
             return externalUnlessEntry({ path: id })
           }
+          // 如果已经被放入depImports也不需要再打包
           if (depImports[id]) {
             return externalUnlessEntry({ path: id })
           }
+          // 解析这个路径
           const resolved = await resolve(id, importer)
           if (resolved) {
+            // 如果不是绝对路径直接external
             if (shouldExternalizeDep(resolved, id)) {
               return externalUnlessEntry({ path: id })
             }
@@ -381,6 +427,8 @@ function esbuildScanPlugin(
               }
               return externalUnlessEntry({ path: id })
             } else if (isScannable(resolved)) {
+              // 如果可以被扫描的话
+              // 如果是html文件就把namespace设置为html
               const namespace = htmlTypesRE.test(resolved) ? 'html' : undefined
               // linked package, keep crawling
               return {
@@ -391,6 +439,7 @@ function esbuildScanPlugin(
               return externalUnlessEntry({ path: id })
             }
           } else {
+            // 被遗漏了的包
             missing[id] = normalizePath(importer)
           }
         }
@@ -403,6 +452,7 @@ function esbuildScanPlugin(
       // may end with these extensions
 
       // css & json
+      // css json都不用单独打包
       build.onResolve(
         {
           filter: /\.(css|less|sass|scss|styl|stylus|pcss|postcss|json)$/
@@ -432,6 +482,7 @@ function esbuildScanPlugin(
         },
         async ({ path: id, importer }) => {
           // use vite resolver to support urls and omitted extensions
+          // 对所有的文件都使用插件的resolveId周期做解析
           const resolved = await resolve(id, importer)
           if (resolved) {
             if (shouldExternalizeDep(resolved, id) || !isScannable(resolved)) {

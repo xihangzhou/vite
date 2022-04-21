@@ -88,13 +88,16 @@ export function createWebSocketServer(
   const hmrServer = hmr && hmr.server
   const hmrPort = hmr && hmr.port
   // TODO: the main server port may not have been chosen yet as it may use the next available
-  const portsAreCompatible = !hmrPort || hmrPort === config.server.port
-  const wsServer = hmrServer || (portsAreCompatible && server)
-  const customListeners = new Map<string, Set<WebSocketCustomListener<any>>>()
+  const portsAreCompatible = !hmrPort || hmrPort === config.server.port // hmrPort没有指定或者这个指定的接口和开发服务器的端口一致
+  const wsServer = hmrServer || (portsAreCompatible && server) // 如果指定了hmrServer就用配置的hmrServer，否则如果端口号一致就使用开发服务器
+  const customListeners = new Map<string, Set<WebSocketCustomListener<any>>>() // 自定义webSocket回调函数
   const clientsMap = new WeakMap<WebSocketRaw, WebSocketClient>()
 
+  // 如果已经定义了wsServer
+  // 最后用wss去保存对应这次websocketServer
   if (wsServer) {
     wss = new WebSocketServerRaw({ noServer: true })
+    // 使用这个已有的服务去监听upgrade事件，采用这个http的tcp连接来进行websocket的连接
     wsServer.on('upgrade', (req, socket, head) => {
       if (req.headers['sec-websocket-protocol'] === HMR_HEADER) {
         wss.handleUpgrade(req, socket as Socket, head, (ws) => {
@@ -106,6 +109,8 @@ export function createWebSocketServer(
     const websocketServerOptions: ServerOptions = {}
     const port = hmrPort || 24678
     const host = (hmr && hmr.host) || undefined
+
+    // 如果有https的要求就要自己封装一下https
     if (httpsOptions) {
       // if we're serving the middlewares over https, the ws library doesn't support automatically creating an https server, so we need to do it ourselves
       // create an inline https server and mount the websocket server to it
@@ -135,23 +140,26 @@ export function createWebSocketServer(
     }
 
     // vite dev server in middleware mode
+    // node的
     wss = new WebSocketServerRaw(websocketServerOptions)
   }
 
+  // connection事件代表这个websocket连接已经成功,socket为这次webSocket连接
   wss.on('connection', (socket) => {
+    // message为这次连接收到消息
     socket.on('message', (raw) => {
-      if (!customListeners.size) return
+      if (!customListeners.size) return // 如果没有自定义的回调就什么也不做
       let parsed: any
       try {
         parsed = JSON.parse(String(raw))
       } catch {}
       if (!parsed || parsed.type !== 'custom' || !parsed.event) return
-      const listeners = customListeners.get(parsed.event)
+      const listeners = customListeners.get(parsed.event) // 通过event获取listeners
       if (!listeners?.size) return
       const client = getSocketClent(socket)
       listeners.forEach((listener) => listener(parsed.data, client))
     })
-    socket.send(JSON.stringify({ type: 'connected' }))
+    socket.send(JSON.stringify({ type: 'connected' })) // 对这次socket连接的实例发送connected事件
     if (bufferedError) {
       socket.send(JSON.stringify(bufferedError))
       bufferedError = null
@@ -170,6 +178,7 @@ export function createWebSocketServer(
   // Provide a wrapper to the ws client so we can send messages in JSON format
   // To be consistent with server.ws.send
   function getSocketClent(socket: WebSocketRaw) {
+    // clientsMap存储了某次websocket连接socket实例和发送消息的对应关系，其实这里并没有太用这次储存关系，就是转换了一下json而已
     if (!clientsMap.has(socket)) {
       clientsMap.set(socket, {
         send: (...args) => {
@@ -195,6 +204,7 @@ export function createWebSocketServer(
   // sends the error payload before the client connection is established.
   // If we have no open clients, buffer the error and send it to the next
   // connected client.
+  // 缓存这次编译的错误给下一个连接
   let bufferedError: ErrorPayload | null = null
 
   return {

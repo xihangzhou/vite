@@ -94,14 +94,17 @@ export async function resolveHttpServer(
   app: Connect.Server,
   httpsOptions?: HttpsServerOptions
 ): Promise<HttpServer> {
+  // 如果没有开启https就直接生成http
   if (!httpsOptions) {
     return require('http').createServer(app)
   }
 
+  // 如果开启了proxy使用http1的https服务
   if (proxy) {
     // #484 fallback to http1 when proxy is needed.
     return require('https').createServer(httpsOptions, app)
   } else {
+    // 否则使用http2的secureServer
     return require('http2').createSecureServer(
       {
         ...httpsOptions,
@@ -197,6 +200,8 @@ export async function httpServerStart(
 
     httpServer.on('error', onError)
 
+    // 正式启用对port的监听
+    // 注意listen方法被重写
     httpServer.listen(port, host, () => {
       httpServer.removeListener('error', onError)
       resolve(port)

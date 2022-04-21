@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { performance } = require('perf_hooks')
 
+// __dirname是当前文件的目录
 if (!__dirname.includes('node_modules')) {
   try {
     // only available as dev dependency
@@ -8,6 +9,7 @@ if (!__dirname.includes('node_modules')) {
   } catch (e) {}
 }
 
+// global全局的变量
 global.__vite_start_time = performance.now()
 
 // check debug mode first before requiring the CLI.

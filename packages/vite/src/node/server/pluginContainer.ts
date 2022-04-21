@@ -48,7 +48,7 @@ import type {
   RollupError,
   TransformResult
 } from 'rollup'
-import * as acorn from 'acorn'
+import * as acorn from 'acorn' // acorn是rollup的js解析器，用于将js代表转换为我们需要的ast
 import type { RawSourceMap } from '@ampproject/remapping'
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping'
 import { cleanUrl, combineSourcemaps } from '../utils'
@@ -151,8 +151,8 @@ export async function createPluginContainer(
   const watchFiles = new Set<string>()
 
   // get rollup version
-  const rollupPkgPath = resolve(require.resolve('rollup'), '../../package.json')
-  const minimalContext: MinimalPluginContext = {
+  const rollupPkgPath = resolve(require.resolve('rollup'), '../../package.json') // 获取rollup包的package.json文件
+  const minimalContext: MinimalPluginContext = { // minimalContext 最小环境，里面存放了rollup的版本和watchMode
     meta: {
       rollupVersion: JSON.parse(fs.readFileSync(rollupPkgPath, 'utf-8'))
         .version,
@@ -213,11 +213,12 @@ export async function createPluginContainer(
   // we should create a new context for each async hook pipeline so that the
   // active plugin in that pipeline can be tracked in a concurrency-safe manner.
   // using a class to make creating new contexts more efficient
+  // 使用一个Context类去存储hook的执行上下文，这样的话在hook中就可以通过this.的方式去指向这个context环境
   class Context implements PluginContext {
     meta = minimalContext.meta
     ssr = false
     _scan = false
-    _activePlugin: Plugin | null
+    _activePlugin: Plugin | null // 这个插件上下文对应的插件
     _activeId: string | null = null
     _activeCode: string | null = null
     _resolveSkips?: Set<Plugin>
@@ -461,13 +462,17 @@ export async function createPluginContainer(
   let closed = false
 
   const container: PluginContainer = {
+    // 调用插件的options周期
     options: await (async () => {
-      let options = rollupOptions
+      // https://cn.vitejs.dev/config/#build-rollupoptions
+      let options = rollupOptions // 这个是在配置当中定义的rollup的选项
       for (const plugin of plugins) {
         if (!plugin.options) continue
         options =
-          (await plugin.options.call(minimalContext, options)) || options
+          (await plugin.options.call(minimalContext, options)) || options // 调用这个插件的options周期，并且把this指向minimalContext，传入rollup选项让用户自定义。如果没有定义这个周期或者没有返回值就直接用rollup配置
       }
+      // 如果返回的选项中有acornInjectPlugins就要extend一下，比如要让acorn去解析jsx就要用jsx的acorn插件
+      // https://rollupjs.org/guide/en/#acorninjectplugins
       if (options.acornInjectPlugins) {
         parser = acorn.Parser.extend(options.acornInjectPlugins as any)
       }
@@ -480,19 +485,25 @@ export async function createPluginContainer(
 
     getModuleInfo,
 
+    // 调用插件的buildStart周期
     async buildStart() {
       await Promise.all(
+        // 这个plugins是config中配置的plugins
         plugins.map((plugin) => {
+          // 如果plugin定义了buildStart周期
           if (plugin.buildStart) {
             return plugin.buildStart.call(
-              new Context(plugin) as any,
-              container.options as NormalizedInputOptions
+              new Context(plugin) as any, // 为这个plugin的buildStart周期生成一个自己的上下文
+              container.options as NormalizedInputOptions // 这个buildStart的参数是container.options，是通过options周期执行返回的融合了配置项中rollup配置的配置项目
             )
           }
         })
       )
     },
 
+    // 调用插件的resolveId周期
+    //  are called on each incoming module request:
+    // 传入没有处理过的rawId,其实就是文件路径，importer是引用这个rawId的路径
     async resolveId(rawId, importer = join(root, 'index.html'), options) {
       const skip = options?.skip
       const ssr = options?.ssr

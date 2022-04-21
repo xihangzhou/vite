@@ -63,6 +63,7 @@ export class ModuleGraph {
   safeModulesPath = new Set<string>()
 
   constructor(
+    // 私有方法，默认把resolveId方法绑定到实例上
     private resolveId: (
       url: string,
       ssr: boolean
